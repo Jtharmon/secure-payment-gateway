@@ -1,8 +1,6 @@
-// frontend/src/PaymentForm.jsx
-
 import React, { useState } from 'react';
-import { sendPaymentData } from './api';  // Import the API function
-import { encryptCardData } from './encryptUtils';
+import { sendPaymentData } from './api';
+import { encryptData, generateKey } from './encryptUtils';
 
 const PaymentForm = () => {
   const [cardNumber, setCardNumber] = useState('');
@@ -11,71 +9,71 @@ const PaymentForm = () => {
   const [amount, setAmount] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Helper function for validating card number
-  const validateCardNumber = (cardNumber) => {
-    const regex = /^[0-9]{16}$/;  // Simple 16-digit card validation
-    return regex.test(cardNumber);
-  };
-
-  // Helper function for validating expiration date (MM/YY format)
-  const validateExpirationDate = (date) => {
-    const regex = /^(0[1-9]|1[0-2])\/([0-9]{2})$/;
-    return regex.test(date);
-  };
-
-  // Helper function for validating CVV (3 digits)
-  const validateCVV = (cvv) => {
-    const regex = /^[0-9]{3}$/;
-    return regex.test(cvv);
-  };
+  const validateCardNumber = (num) => /^[0-9]{16}$/.test(num);
+  const validateExpirationDate = (date) => /^(0[1-9]|1[0-2])\/([0-9]{2})$/.test(date);
+  const validateCVV = (cvv) => /^[0-9]{3}$/.test(cvv);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
 
-    // Input validation
+    // Validate input
     if (!validateCardNumber(cardNumber)) {
-      setError('Invalid card number. Please enter a 16-digit card number.');
+      setError('Invalid card number (must be 16 digits)');
+      setLoading(false);
       return;
     }
     if (!validateExpirationDate(expirationDate)) {
-      setError('Invalid expiration date. Please use MM/YY format.');
+      setError('Invalid expiration date format (MM/YY)');
+      setLoading(false);
       return;
     }
     if (!validateCVV(cvv)) {
-      setError('Invalid CVV. Please enter a 3-digit CVV.');
+      setError('Invalid CVV (must be 3 digits)');
+      setLoading(false);
       return;
     }
     if (amount <= 0) {
-      setError('Please enter a valid payment amount.');
+      setError('Amount must be greater than 0');
+      setLoading(false);
       return;
     }
 
-    // Encrypt the payment details on the client-side
-    const encryptedCard = encryptCardData(cardNumber);
-    const encryptedCvv = encryptCardData(cvv);
-    const encryptedExpirationDate = encryptCardData(expirationDate);
-
-    const paymentData = {
-      card_number: encryptedCard,
-      expiration_date: encryptedExpirationDate,
-      cvv: encryptedCvv,
-      amount: amount,
-    };
-
     try {
+      // Generate AES key
+      const key = await generateKey();
+
+      // Encrypt each field
+      const encryptedCard = await encryptData(cardNumber, key);
+      const encryptedExp = await encryptData(expirationDate, key);
+      const encryptedCvv = await encryptData(cvv, key);
+
+      // Prepare payload
+      const paymentData = {
+        card_number: encryptedCard.ciphertext,
+        expiration_date: encryptedExp.ciphertext,
+        cvv: encryptedCvv.ciphertext,
+        amount: amount,
+        iv: encryptedCard.iv, // Same IV used for each (could generate new ones if needed)
+        key: Array.from(new Uint8Array(key)) // ⚠️ Insecure for production; for demo only
+      };
+
       const response = await sendPaymentData(paymentData);
-      setMessage(response.message);  // Assuming the response has a message
-      setError('');
-    } catch (error) {
-      setMessage('');
-      setError('Error processing payment: ' + (error.response?.data || error));
+      setMessage(response.message || 'Payment processed successfully.');
+    } catch (err) {
+      setError('Error processing payment: ' + (err.response?.data || err.message));
     }
+
+    setLoading(false);
   };
 
   return (
     <div>
-      <h2>Payment Form</h2>
+      <h2>Secure Payment Form</h2>
       <form onSubmit={handleSubmit}>
         <label>Card Number:</label>
         <input
@@ -83,8 +81,7 @@ const PaymentForm = () => {
           value={cardNumber}
           onChange={(e) => setCardNumber(e.target.value)}
           required
-        />
-        <br />
+        /><br />
 
         <label>Expiration Date (MM/YY):</label>
         <input
@@ -92,8 +89,7 @@ const PaymentForm = () => {
           value={expirationDate}
           onChange={(e) => setExpirationDate(e.target.value)}
           required
-        />
-        <br />
+        /><br />
 
         <label>CVV:</label>
         <input
@@ -101,8 +97,7 @@ const PaymentForm = () => {
           value={cvv}
           onChange={(e) => setCvv(e.target.value)}
           required
-        />
-        <br />
+        /><br />
 
         <label>Amount:</label>
         <input
@@ -110,14 +105,15 @@ const PaymentForm = () => {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           required
-        />
-        <br />
+        /><br />
 
-        <button type="submit">Submit Payment</button>
+        <button type="submit" disabled={loading}>
+          {loading ? 'Processing...' : 'Submit Payment'}
+        </button>
       </form>
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
-      {message && <p>{message}</p>}
+      {message && <p style={{ color: 'green' }}>{message}</p>}
     </div>
   );
 };

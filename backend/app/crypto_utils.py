@@ -4,6 +4,7 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Random import get_random_bytes
 import base64
+import uuid
 
 SECRET_KEY = get_random_bytes(16)  # AES key (16 bytes for AES-128)
 IV = get_random_bytes(16)  # Initialization vector
@@ -19,3 +20,14 @@ def decrypt_data(encrypted_data: str) -> str:
     encrypted_data_bytes = base64.b64decode(encrypted_data)
     decrypted_data = unpad(cipher.decrypt(encrypted_data_bytes), AES.block_size)
     return decrypted_data.decode('utf-8')
+    
+# Simulated in-memory token vault
+token_vault = {}
+
+def tokenize_card(card_data: str) -> str:
+    token = str(uuid.uuid4())
+    token_vault[token] = card_data
+    return token
+
+def detokenize_card(token: str) -> str:
+    return token_vault.get(token, None)
